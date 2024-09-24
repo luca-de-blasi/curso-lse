@@ -33,7 +33,7 @@ int main(void) {
     	for(uint32_t i = 0; i < 500000; i++);
 
     	GPIO_PinWrite(GPIO, 0, LED_D1, !GPIO_PinRead(GPIO, 0, LED_D1));
-    	for(uint32_t i = 0; i < 1500000; i++);
+    	for(uint32_t i = 0; i < 500000; i++);
     }
     return 0;
 }
