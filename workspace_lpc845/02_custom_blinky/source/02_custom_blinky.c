@@ -2,38 +2,57 @@
 #include "peripherals.h"
 #include "pin_mux.h"
 #include "fsl_debug_console.h"
+#include "fsl_swm.h"
+#include "fsl_power.h"
+#include "fsl_adc.h"
 
-// Etiqueta para el LED azul
-#define LED_BLUE	1
-#define LED_D1 29
+#define POTE 0
+#define LED_RED 2
 
-/*
- * @brief   Application entry point.
-*/
+uint16_t tiempo = 0;
+
 int main(void) {
-	// Inicializacion
     BOARD_InitBootClocks();
     BOARD_InitDebugConsole();
 
-    // Estructura de configuracion para salida
-    gpio_pin_config_t out_config_1 = { kGPIO_DigitalOutput, 1 };
-    // Habilito el clock del GPIO 1
+    gpio_pin_config_t out_config = {kGPIO_DigitalOutput, 1};
     GPIO_PortInit(GPIO, 1);
-    // Configuro el pin 0 del GPIO 1 como salida
-    GPIO_PinInit(GPIO, 1, LED_BLUE, &out_config_1);
+    GPIO_PinInit(GPIO, 1, LED_RED, &out_config);
+    CLOCK_EnableClock(kCLOCK_Swm);
+    SWM_SetFixedPinSelect(SWM0, kSWM_ADC_CHN0, true);
+    CLOCK_DisableClock(kCLOCK_Swm);
+    CLOCK_Select(kADC_Clk_From_Fro);
+    CLOCK_SetClkDivider(kCLOCK_DivAdcClk, 1);
+    POWER_DisablePD(kPDRUNCFG_PD_ADC0);
+   	uint32_t frequency = CLOCK_GetFreq(kCLOCK_Fro) / CLOCK_GetClkDivider(kCLOCK_DivAdcClk);
+   	ADC_DoSelfCalibration(ADC0, frequency);
+   	adc_config_t adc_config;
+   	ADC_GetDefaultConfig(&adc_config);
+   	ADC_Init(ADC0, &adc_config);
+   	adc_conv_seq_config_t adc_sequence = {
+   		.channelMask = 1 << POTE, .triggerMask = 0, .triggerPolarity = kADC_TriggerPolarityPositiveEdge, .enableSyncBypass = false, .interruptMode = kADC_InterruptForEachConversion
+   	};
 
-    gpio_pin_config_t out_config_0 = { kGPIO_DigitalOutput, 0 };
-    GPIO_PortInit(GPIO, 0);
-    GPIO_PinInit(GPIO, 0, LED_D1, &out_config_0);
+   	ADC_SetConvSeqAConfig(ADC0, &adc_sequence);
+   	ADC_EnableConvSeqA(ADC0, true);
 
-    while(1) {
-    	// Cambio el estado anterior del LED azul
-    	GPIO_PinWrite(GPIO, 1, LED_BLUE, !GPIO_PinRead(GPIO, 1, LED_BLUE));
-    	// Demora
-    	for(uint32_t i = 0; i < 500000; i++);
+    SysTick_Config(SystemCoreClock / 1000);
 
-    	GPIO_PinWrite(GPIO, 0, LED_D1, !GPIO_PinRead(GPIO, 0, LED_D1));
-    	for(uint32_t i = 0; i < 500000; i++);
+    while (true){
+    	adc_result_info_t adc_info;
+    	ADC_DoSoftwareTriggerConvSeqA(ADC0);
+    	while (!ADC_GetChannelConversionResult(ADC0, POTE, &adc_info));
+    	tiempo = adc_info.result * 1900 / 4095 + 100;
     }
     return 0;
+}
+void SysTick_Handler(void) {
+	static uint16_t i = 0;
+	i++;
+	if(i == tiempo) {
+		i = 0;
+		GPIO_PinWrite(GPIO, 1, LED_RED, !GPIO_PinRead(GPIO, 1, LED_RED));
+	} else if (tiempo < i) {
+		i = 0;
+	}
 }
